@@ -1,4 +1,5 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { supabase } from "./lib/supabase";
 import {
   Activity, Archive, ArrowDownLeft, ArrowLeft, AudioLines, Bell,
   CheckCheck, ChevronDown, CircleHelp, LockKeyhole,
@@ -52,6 +53,71 @@ function Avatar({ chat, small = false }: { chat: Chat; small?: boolean }) {
 }
 
 export default function App() {
+  const [authUser, setAuthUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState<"login" | "register">("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authBusy, setAuthBusy] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
+  const [authError, setAuthError] = useState("");
+
+  useEffect(() => {
+    let mounted = true;
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error) setAuthError(error.message);
+      setAuthUser(data.session?.user ?? null);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthUser(session?.user ?? null);
+    });
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  async function submitAuth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthError("");
+    setAuthMessage("");
+    setAuthBusy(true);
+    try {
+      if (authMode === "register") {
+        const { data, error } = await supabase.auth.signUp({
+          email: authEmail.trim(),
+          password: authPassword,
+          options: {
+            emailRedirectTo: `${window.location.origin}${window.location.pathname}`,
+          },
+        });
+        if (error) throw error;
+        if (!data.session) {
+          setAuthMessage("Аккаунт создан. Проверь почту и подтверди email, чтобы войти.");
+        } else {
+          setAuthMessage("Регистрация прошла успешно.");
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email: authEmail.trim(),
+          password: authPassword,
+        });
+        if (error) throw error;
+      }
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Не удалось выполнить запрос.");
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function signOut() {
+    const { error } = await supabase.auth.signOut();
+    if (error) setNotice(`Не удалось выйти: ${error.message}`);
+  }
+
   const [chats, setChats] = useState(initialChats);
   const [activeId, setActiveId] = useState(1);
   const [messages, setMessages] = useState(initialMessages);
@@ -60,7 +126,7 @@ export default function App() {
   const [tab, setTab] = useState<"all" | "unread" | "groups">("all");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [showDetails, setShowDetails] = useState(true);
-  const [notice, setNotice] = useState("Демонстрационный режим · сервер ещё не подключён");
+  const [notice, setNotice] = useState("Аккаунт подключён. Переписки пока демонстрационные.");
   const [searchOpen, setSearchOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -99,6 +165,43 @@ export default function App() {
     setNotice(`${kind === "аудио" ? "Аудиозвонок" : "Видеозвонок"} пока не подключён: потребуется WebRTC и сервер сигнализации.`);
   }
 
+  if (authLoading) {
+    return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0b0910", color: "#f4efff", fontFamily: "Inter, system-ui, sans-serif" }}>
+      <div style={{ color: "#b9a4ff" }}>Подключаем VOIDCHAT…</div>
+    </div>;
+  }
+
+  if (!authUser) {
+    const panelStyle = { width: "min(420px, calc(100vw - 36px))", boxSizing: "border-box" as const, padding: "32px", borderRadius: "24px", border: "1px solid #30263e", background: "#14101b", boxShadow: "0 24px 90px #0008" };
+    const fieldStyle = { width: "100%", boxSizing: "border-box" as const, padding: "13px 14px", borderRadius: "12px", border: "1px solid #3a3048", background: "#0d0a12", color: "#f7f1ff", outline: "none", fontSize: "14px" };
+    return <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: "20px", boxSizing: "border-box", background: "radial-gradient(ellipse at top, #29163e 0%, #100c17 48%, #09080d 100%)", color: "#f4efff", fontFamily: "Inter, system-ui, sans-serif" }}>
+      <div style={panelStyle}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "28px" }}>
+          <div style={{ width: "44px", height: "44px", display: "grid", placeItems: "center", borderRadius: "14px", background: "linear-gradient(135deg, #a78bfa, #6d28d9)", color: "white" }}><MessageCircle size={23}/></div>
+          <div><div style={{ fontWeight: 800, letterSpacing: "1.5px", fontSize: "20px" }}>VOID<span style={{ color: "#b49aff" }}>CHAT</span></div><div style={{ fontSize: "10px", letterSpacing: "2px", color: "#92869f", marginTop: "3px" }}>PRIVATE SPACE</div></div>
+        </div>
+        <h1 style={{ fontSize: "25px", margin: "0 0 8px", letterSpacing: "-0.6px" }}>{authMode === "login" ? "С возвращением" : "Создать аккаунт"}</h1>
+        <p style={{ color: "#a99eb6", fontSize: "14px", lineHeight: 1.6, margin: "0 0 24px" }}>{authMode === "login" ? "Войди, чтобы продолжить в VOIDCHAT." : "Зарегистрируйся с помощью email и пароля."}</p>
+        <form onSubmit={submitAuth} style={{ display: "grid", gap: "14px" }}>
+          <label style={{ display: "grid", gap: "7px", color: "#c9bfd5", fontSize: "12px" }}>EMAIL
+            <input style={fieldStyle} type="email" autoComplete="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="you@example.com"/>
+          </label>
+          <label style={{ display: "grid", gap: "7px", color: "#c9bfd5", fontSize: "12px" }}>ПАРОЛЬ
+            <input style={fieldStyle} type="password" autoComplete={authMode === "login" ? "current-password" : "new-password"} minLength={6} required value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="Минимум 6 символов"/>
+          </label>
+          {authError && <div role="alert" style={{ padding: "11px 12px", borderRadius: "10px", background: "#421d2b", color: "#ffb9c7", fontSize: "13px", overflowWrap: "anywhere" }}>{authError}</div>}
+          {authMessage && <div role="status" style={{ padding: "11px 12px", borderRadius: "10px", background: "#1e3a2e", color: "#b9f6d0", fontSize: "13px" }}>{authMessage}</div>}
+          <button type="submit" disabled={authBusy} style={{ border: 0, borderRadius: "12px", padding: "14px", marginTop: "4px", color: "white", fontWeight: 700, fontSize: "14px", cursor: authBusy ? "wait" : "pointer", background: authBusy ? "#5b4b70" : "linear-gradient(100deg, #8b5cf6, #6d28d9)" }}>{authBusy ? "Подожди…" : authMode === "login" ? "Войти" : "Создать аккаунт"}</button>
+        </form>
+        <div style={{ borderTop: "1px solid #30263e", marginTop: "22px", paddingTop: "18px", textAlign: "center", fontSize: "13px", color: "#a99eb6" }}>
+          {authMode === "login" ? "Впервые в VOIDCHAT?" : "Уже есть аккаунт?"}{" "}
+          <button type="button" onClick={() => { setAuthMode(authMode === "login" ? "register" : "login"); setAuthError(""); setAuthMessage(""); }} style={{ background: "none", border: 0, color: "#c4b5fd", fontWeight: 700, cursor: "pointer", padding: "4px" }}>{authMode === "login" ? "Регистрация" : "Войти"}</button>
+        </div>
+        <p style={{ color: "#786c86", fontSize: "11px", lineHeight: 1.5, margin: "22px 0 0", textAlign: "center" }}>Сейчас подключена авторизация. Сообщения и список чатов пока остаются демонстрационными.</p>
+      </div>
+    </div>;
+  }
+
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand-row">
@@ -107,9 +210,9 @@ export default function App() {
         <button className="icon-btn top-more" aria-label="Дополнительно"><MoreHorizontal size={20}/></button>
       </div>
 
-      <button className="profile-card" onClick={() => setNotice("Профиль пользователя появится после подключения авторизации.")}>
+      <button className="profile-card" onClick={signOut} title="Нажми, чтобы выйти из аккаунта">
         <div className="avatar me-avatar">V<span className="online-dot"/></div>
-        <div className="profile-copy"><strong>Void User</strong><span><i/> В сети</span></div>
+        <div className="profile-copy"><strong>{authUser.email ?? "VOIDCHAT user"}</strong><span><i/> Аккаунт подключён · нажми для выхода</span></div>
         <ChevronDown size={16} className="muted-icon"/>
       </button>
 

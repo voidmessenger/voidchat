@@ -1,9 +1,11 @@
 
+
 name: Deploy VOIDCHAT to GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -26,11 +28,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
 
       - name: Install dependencies
-        run:
-            npm install
-            chmod +x node_modules/.bin/vite
+        run: npm ci
+
+      - name: Fix Vite permissions
+        run: chmod +x node_modules/.bin/vite
 
       - name: Build
         run: npm run build

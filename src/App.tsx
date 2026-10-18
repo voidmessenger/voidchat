@@ -64,13 +64,14 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true;
-    supabase.auth.getSession().then(({ data, error }) => {
+    supabase.auth.getSession().then((result) => {
+    const { data, error } = result;
       if (!mounted) return;
       if (error) setAuthError(error.message);
       setAuthUser(data.session?.user ?? null);
       setAuthLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, session: import('@supabase/supabase-js').Session | null) => {
       setAuthUser(session?.user ?? null);
     });
     return () => {
